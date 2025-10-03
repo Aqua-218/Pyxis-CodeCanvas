@@ -10,8 +10,6 @@ import { useSettings } from '@/hooks/useSettings';
 import { shikiToMonaco } from '@shikijs/monaco';
 import { createHighlighter, type Highlighter } from 'shiki';
 
-// Monaco loaderの初期設定
-loader.config({ monaco });
 
 // グローバルハイライターインスタンス
 let globalHighlighter: Highlighter | null = null;
