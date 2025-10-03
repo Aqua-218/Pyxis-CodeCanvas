@@ -182,11 +182,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ currentProject }) => {
 
           <div>
             <label className="block text-xs mb-1.5" style={{ color: colors.foreground }}>
-              コードハイライト
+              コードハイライト（Shiki）
             </label>
             <select
-              value={highlightTheme}
-              onChange={e => setHighlightTheme(e.target.value)}
+              value={settings.theme.highlightTheme}
+              onChange={e => {
+                const newTheme = e.target.value;
+                setHighlightTheme(newTheme);
+                updateSettings({
+                  theme: { ...settings.theme, highlightTheme: newTheme },
+                });
+              }}
               className="w-full rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1"
               style={{
                 background: colors.cardBg,
@@ -200,6 +206,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ currentProject }) => {
                 </option>
               ))}
             </select>
+            <p className="text-[10px] mt-1" style={{ color: colors.mutedFg }}>
+              Monaco Editorのシンタックスハイライト
+            </p>
           </div>
 
           <div>

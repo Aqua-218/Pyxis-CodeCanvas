@@ -6,9 +6,12 @@ import { getLanguage, countCharsNoSpaces } from './editor-utils';
 import { useMonacoModels } from '../hooks/useMonacoModels';
 import { useMonacoBreakpoints } from '../hooks/useMonacoBreakpoints';
 import EditorPlaceholder from '../ui/EditorPlaceholder';
+import { useSettings } from '@/hooks/useSettings';
+import { shikiToMonaco } from '@shikijs/monaco';
+import { createHighlighter } from 'shiki';
 
-// グローバルフラグ: テーマ定義を一度だけ実行
-let isThemeDefined = false;
+// グローバルフラグ: Shiki初期化を一度だけ実行
+let isShikiInitialized = false;
 
 interface MonacoEditorProps {
   tabId: string;
@@ -22,6 +25,7 @@ interface MonacoEditorProps {
   onSelectionCountChange: (count: number | null) => void;
   tabSize?: number;
   insertSpaces?: boolean;
+  projectId?: string;
 }
 
 export default function MonacoEditor({
@@ -36,12 +40,14 @@ export default function MonacoEditor({
   onSelectionCountChange,
   tabSize = 2,
   insertSpaces = true,
+  projectId,
 }: MonacoEditorProps) {
   const { colors } = useTheme();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const isMountedRef = useRef(true);
+  const { settings } = useSettings(projectId);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -103,75 +109,94 @@ export default function MonacoEditor({
       (editor as any)._pyxisBreakpointDisposable = mouseDisposable;
     }
 
-    // テーマ定義（初回のみ）
-    if (!isThemeDefined) {
-      try {
-        // React型定義を非同期で読み込み（エラーは無視）
-        Promise.all([
-          fetch('https://unpkg.com/@types/react/index.d.ts').then(r => r.text()),
-          fetch('https://unpkg.com/@types/react-dom/index.d.ts').then(r => r.text()),
-        ])
-          .then(([reactTypes, reactDomTypes]) => {
-            if (monacoRef.current) {
-              monacoRef.current.languages.typescript.typescriptDefaults.addExtraLib(
-                reactTypes,
-                'file:///node_modules/@types/react/index.d.ts'
-              );
-              monacoRef.current.languages.typescript.typescriptDefaults.addExtraLib(
-                reactDomTypes,
-                'file:///node_modules/@types/react-dom/index.d.ts'
-              );
-            }
-          })
-          .catch(e => {
-            console.warn('[MonacoEditor] Failed to load React type definitions:', e);
-          });
-
-        mon.editor.defineTheme('pyxis-custom', {
-          base: 'vs-dark',
-          inherit: true,
-          rules: [
-            { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
-            { token: 'keyword', foreground: '569CD6', fontStyle: 'bold' },
-            { token: 'string', foreground: 'CE9178' },
-            { token: 'number', foreground: 'B5CEA8' },
-            { token: 'regexp', foreground: 'D16969' },
-            { token: 'operator', foreground: 'D4D4D4' },
-            { token: 'namespace', foreground: '4EC9B0' },
-            { token: 'type', foreground: '4EC9B0' },
-            { token: 'struct', foreground: '4EC9B0' },
-            { token: 'class', foreground: '4EC9B0' },
-            { token: 'interface', foreground: '4EC9B0' },
-            { token: 'parameter', foreground: '9CDCFE' },
-            { token: 'variable', foreground: '9CDCFE' },
-            { token: 'property', foreground: '9CDCFE' },
-            { token: 'function', foreground: 'DCDCAA' },
-            { token: 'method', foreground: 'DCDCAA' },
-          ],
-          colors: {
-            'editor.background': colors.editorBg || '#1e1e1e',
-            'editor.foreground': colors.editorFg || '#d4d4d4',
-            'editor.lineHighlightBackground': colors.editorLineHighlight || '#2d2d30',
-            'editor.selectionBackground': colors.editorSelection || '#264f78',
-            'editor.inactiveSelectionBackground': '#3a3d41',
-            'editorCursor.foreground': colors.editorCursor || '#aeafad',
-            'editorWhitespace.foreground': '#404040',
-            'editorIndentGuide.background': '#404040',
-            'editorIndentGuide.activeBackground': '#707070',
-            'editorBracketMatch.background': '#0064001a',
-            'editorBracketMatch.border': '#888888',
-          },
+    // Shikiベースのシンタックスハイライト初期化（初回のみ）
+    if (!isShikiInitialized) {
+      isShikiInitialized = true;
+      
+      // React型定義を非同期で読み込み（エラーは無視）
+      Promise.all([
+        fetch('https://unpkg.com/@types/react/index.d.ts').then(r => r.text()),
+        fetch('https://unpkg.com/@types/react-dom/index.d.ts').then(r => r.text()),
+      ])
+        .then(([reactTypes, reactDomTypes]) => {
+          if (monacoRef.current) {
+            monacoRef.current.languages.typescript.typescriptDefaults.addExtraLib(
+              reactTypes,
+              'file:///node_modules/@types/react/index.d.ts'
+            );
+            monacoRef.current.languages.typescript.typescriptDefaults.addExtraLib(
+              reactDomTypes,
+              'file:///node_modules/@types/react-dom/index.d.ts'
+            );
+          }
+        })
+        .catch(e => {
+          console.warn('[MonacoEditor] Failed to load React type definitions:', e);
         });
-        isThemeDefined = true;
-      } catch (e) {
-        console.warn('[MonacoEditor] Failed to define theme:', e);
-      }
-    }
 
-    try {
-      mon.editor.setTheme('pyxis-custom');
-    } catch (e) {
-      console.warn('[MonacoEditor] Failed to set theme:', e);
+      // Shikiハイライターの初期化
+      const highlightTheme = settings?.theme.highlightTheme || 'github-dark';
+      
+      createHighlighter({
+        themes: [
+          highlightTheme,
+          'github-dark',
+          'github-light',
+          'dracula',
+          'nord',
+          'monokai',
+          'one-dark-pro',
+          'catppuccin-mocha',
+          'tokyo-night',
+        ],
+        langs: [
+          'javascript', 'typescript', 'jsx', 'tsx', 'python', 'html', 'css', 'json',
+          'markdown', 'yaml', 'xml', 'bash', 'shell', 'sql', 'java', 'c', 'cpp',
+          'csharp', 'go', 'rust', 'swift', 'kotlin', 'php', 'ruby', 'vue', 'svelte',
+          'dockerfile', 'makefile', 'toml', 'ini', 'properties', 'graphql', 'sass',
+          'scss', 'less', 'stylus', 'diff', 'git-commit', 'git-rebase', 'regex',
+        ],
+      })
+        .then(highlighter => {
+          if (monacoRef.current) {
+            // ShikiをMonacoに統合（シンタックスハイライト）
+            shikiToMonaco(highlighter, monacoRef.current);
+            console.log('[MonacoEditor] Shiki initialized with theme:', highlightTheme);
+            
+            // Monacoエディターのカラーテーマを別途定義
+            // Shikiのシンタックスハイライトとは独立して動作
+            monacoRef.current.editor.defineTheme('pyxis-editor-theme', {
+              base: 'vs-dark',
+              inherit: true,
+              rules: [],
+              colors: {
+                'editor.background': colors.editorBg || '#1e1e1e',
+                'editor.foreground': colors.editorFg || '#d4d4d4',
+                'editor.lineHighlightBackground': colors.editorLineHighlight || '#2d2d30',
+                'editor.selectionBackground': colors.editorSelection || '#264f78',
+                'editor.inactiveSelectionBackground': '#3a3d41',
+                'editorCursor.foreground': colors.editorCursor || '#aeafad',
+                'editorWhitespace.foreground': '#404040',
+                'editorIndentGuide.background': '#404040',
+                'editorIndentGuide.activeBackground': '#707070',
+                'editorBracketMatch.background': '#0064001a',
+                'editorBracketMatch.border': '#888888',
+              },
+            });
+            
+            // エディターにテーマを適用
+            if (editorRef.current && !(editorRef.current as any)._isDisposed) {
+              try {
+                monacoRef.current.editor.setTheme('pyxis-editor-theme');
+              } catch (e) {
+                console.warn('[MonacoEditor] Failed to set editor theme:', e);
+              }
+            }
+          }
+        })
+        .catch(e => {
+          console.warn('[MonacoEditor] Failed to initialize Shiki:', e);
+        });
     }
 
     // TypeScript/JavaScript設定
@@ -344,7 +369,7 @@ export default function MonacoEditor({
           onSelectionCountChange(null);
         }
       }}
-      theme="pyxis-custom"
+      theme={settings?.theme.highlightTheme || 'github-dark'}
       options={{
         fontSize: 12,
         lineNumbers: 'on',

@@ -223,6 +223,7 @@ export default function CodeEditor({
         onSelectionCountChange={setSelectionCount}
         tabSize={settings?.editor.tabSize ?? 2}
         insertSpaces={settings?.editor.insertSpaces ?? true}
+        projectId={projectId}
       />
       <CharCountDisplay
         charCount={charCount}
