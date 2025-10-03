@@ -45,7 +45,10 @@ export default function EditorPlaceholder({ type, message }: EditorPlaceholderPr
 
   if (type === 'editor-loading') {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
+      <div 
+        className="h-full flex items-center justify-center text-muted-foreground"
+        style={{ backgroundColor: '#1e1e1e' }}
+      >
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
           <p className="text-sm">エディターを読み込み中...</p>

@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import Editor, { Monaco, OnMount } from '@monaco-editor/react';
+import Editor, { Monaco, OnMount, loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import { useTheme } from '@/context/ThemeContext';
 import { getLanguage, countCharsNoSpaces } from './editor-utils';
@@ -8,9 +8,13 @@ import { useMonacoBreakpoints } from '../hooks/useMonacoBreakpoints';
 import EditorPlaceholder from '../ui/EditorPlaceholder';
 import { useSettings } from '@/hooks/useSettings';
 import { shikiToMonaco } from '@shikijs/monaco';
-import { createHighlighter } from 'shiki';
+import { createHighlighter, type Highlighter } from 'shiki';
 
-// グローバルフラグ: Shiki初期化を一度だけ実行
+// Monaco loaderの初期設定
+loader.config({ monaco });
+
+// グローバルハイライターインスタンス
+let globalHighlighter: Highlighter | null = null;
 let isShikiInitialized = false;
 
 interface MonacoEditorProps {
@@ -109,11 +113,10 @@ export default function MonacoEditor({
       (editor as any)._pyxisBreakpointDisposable = mouseDisposable;
     }
 
-    // Shikiベースのシンタックスハイライト初期化（初回のみ）
+    // React型定義を非同期で読み込み（初回のみ）
     if (!isShikiInitialized) {
       isShikiInitialized = true;
       
-      // React型定義を非同期で読み込み（エラーは無視）
       Promise.all([
         fetch('https://unpkg.com/@types/react/index.d.ts').then(r => r.text()),
         fetch('https://unpkg.com/@types/react-dom/index.d.ts').then(r => r.text()),
@@ -133,21 +136,57 @@ export default function MonacoEditor({
         .catch(e => {
           console.warn('[MonacoEditor] Failed to load React type definitions:', e);
         });
+    }
 
-      // Shikiハイライターの初期化
+    // Shikiハイライターの初期化（全テーマを一度にロード）
+    if (!globalHighlighter) {
       const highlightTheme = settings?.theme.highlightTheme || 'github-dark';
       
       createHighlighter({
         themes: [
-          highlightTheme,
-          'github-dark',
-          'github-light',
-          'dracula',
-          'nord',
-          'monokai',
-          'one-dark-pro',
+          'andromeeda',
+          'aurora-x',
+          'catppuccin-frappe',
+          'catppuccin-latte',
+          'catppuccin-macchiato',
           'catppuccin-mocha',
+          'dracula',
+          'dracula-soft',
+          'github-dark',
+          'github-dark-default',
+          'github-dark-dimmed',
+          'github-light',
+          'github-light-default',
+          'houston',
+          'material-theme',
+          'material-theme-darker',
+          'material-theme-lighter',
+          'material-theme-ocean',
+          'material-theme-palenight',
+          'min-dark',
+          'min-light',
+          'monokai',
+          'night-owl',
+          'nord',
+          'one-dark-pro',
+          'one-light',
+          'plastic',
+          'poimandres',
+          'red',
+          'rose-pine',
+          'rose-pine-dawn',
+          'rose-pine-moon',
+          'slack-dark',
+          'slack-ochin',
+          'snazzy-light',
+          'solarized-dark',
+          'solarized-light',
+          'synthwave-84',
           'tokyo-night',
+          'vesper',
+          'vitesse-black',
+          'vitesse-dark',
+          'vitesse-light',
         ],
         langs: [
           'javascript', 'typescript', 'jsx', 'tsx', 'python', 'html', 'css', 'json',
@@ -158,45 +197,44 @@ export default function MonacoEditor({
         ],
       })
         .then(highlighter => {
+          globalHighlighter = highlighter;
           if (monacoRef.current) {
-            // ShikiをMonacoに統合（シンタックスハイライト）
+            // ShikiをMonacoに統合
             shikiToMonaco(highlighter, monacoRef.current);
-            console.log('[MonacoEditor] Shiki initialized with theme:', highlightTheme);
-            
-            // Monacoエディターのカラーテーマを別途定義
-            // Shikiのシンタックスハイライトとは独立して動作
-            monacoRef.current.editor.defineTheme('pyxis-editor-theme', {
-              base: 'vs-dark',
-              inherit: true,
-              rules: [],
-              colors: {
-                'editor.background': colors.editorBg || '#1e1e1e',
-                'editor.foreground': colors.editorFg || '#d4d4d4',
-                'editor.lineHighlightBackground': colors.editorLineHighlight || '#2d2d30',
-                'editor.selectionBackground': colors.editorSelection || '#264f78',
-                'editor.inactiveSelectionBackground': '#3a3d41',
-                'editorCursor.foreground': colors.editorCursor || '#aeafad',
-                'editorWhitespace.foreground': '#404040',
-                'editorIndentGuide.background': '#404040',
-                'editorIndentGuide.activeBackground': '#707070',
-                'editorBracketMatch.background': '#0064001a',
-                'editorBracketMatch.border': '#888888',
-              },
-            });
-            
-            // エディターにテーマを適用
-            if (editorRef.current && !(editorRef.current as any)._isDisposed) {
-              try {
-                monacoRef.current.editor.setTheme('pyxis-editor-theme');
-              } catch (e) {
-                console.warn('[MonacoEditor] Failed to set editor theme:', e);
-              }
-            }
+            console.log('[MonacoEditor] Shiki initialized with all themes');
           }
         })
         .catch(e => {
           console.warn('[MonacoEditor] Failed to initialize Shiki:', e);
         });
+    } else if (monacoRef.current) {
+      // 既に初期化済みの場合は再統合
+      shikiToMonaco(globalHighlighter, monacoRef.current);
+    }
+
+    // Monacoエディターのカラーテーマを定義
+    try {
+      mon.editor.defineTheme('pyxis-editor-theme', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': colors.editorBg || '#1e1e1e',
+          'editor.foreground': colors.editorFg || '#d4d4d4',
+          'editor.lineHighlightBackground': colors.editorLineHighlight || '#2d2d30',
+          'editor.selectionBackground': colors.editorSelection || '#264f78',
+          'editor.inactiveSelectionBackground': '#3a3d41',
+          'editorCursor.foreground': colors.editorCursor || '#aeafad',
+          'editorWhitespace.foreground': '#404040',
+          'editorIndentGuide.background': '#404040',
+          'editorIndentGuide.activeBackground': '#707070',
+          'editorBracketMatch.background': '#0064001a',
+          'editorBracketMatch.border': '#888888',
+        },
+      });
+      mon.editor.setTheme('pyxis-editor-theme');
+    } catch (e) {
+      console.warn('[MonacoEditor] Failed to set editor theme:', e);
     }
 
     // TypeScript/JavaScript設定
@@ -317,6 +355,21 @@ export default function MonacoEditor({
 
     return () => clearTimeout(timeoutId);
   }, [jumpToLine, jumpToColumn, isEditorReady]);
+
+  // テーマ変更を監視して適用
+  useEffect(() => {
+    if (!isEditorReady || !monacoRef.current) return;
+    
+    const highlightTheme = settings?.theme.highlightTheme || 'github-dark';
+    
+    try {
+      // Shikiテーマを変更
+      monacoRef.current.editor.setTheme(highlightTheme);
+      console.log('[MonacoEditor] Theme changed to:', highlightTheme);
+    } catch (e) {
+      console.warn('[MonacoEditor] Failed to change theme:', e);
+    }
+  }, [settings?.theme.highlightTheme, isEditorReady]);
 
   // ブレークポイントの変更を監視して装飾を更新
   useEffect(() => {
