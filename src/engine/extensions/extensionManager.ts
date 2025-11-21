@@ -25,6 +25,10 @@ import {
   type ExtensionContext,
   type ExtensionActivation,
 } from './types';
+import {
+  initializeSharedModules,
+  createSharedModulesAPI,
+} from './sharedModules';
 
 /**
  * アクティブな拡張機能のキャッシュ
@@ -89,6 +93,13 @@ class ExtensionManager {
 
     console.log('[ExtensionManager] Initializing...');
 
+    // Initialize shared modules registry so host can provide shared libs to extensions
+    try {
+      await initializeSharedModules();
+    } catch (e) {
+      console.warn('[ExtensionManager] initializeSharedModules failed:', e);
+    }
+
     // Reactをグローバルに提供（拡張機能から使えるように）
     if (typeof window !== 'undefined') {
       const React = await import('react');
@@ -119,6 +130,11 @@ class ExtensionManager {
           rehypeKatex: (rehypeKatexModule && (rehypeKatexModule as any).default) || rehypeKatexModule,
           katex: katexModule && ((katexModule as any).default || katexModule),
         };
+        // Export katex also as a dedicated host global for sharedModules resolver
+        if (katexModule) {
+          (window as any).__PYXIS_KATEX__ = (katexModule as any).default || katexModule;
+          console.log('[ExtensionManager] katex provided globally as __PYXIS_KATEX__');
+        }
         console.log('[ExtensionManager] Markdown/math libraries provided globally for extensions');
       } catch (err) {
         console.warn('[ExtensionManager] Failed to provide markdown/math libraries globally:', err);
@@ -396,7 +412,8 @@ class ExtensionManager {
       const exports = await loadExtensionModule(
         installed.cache.entryCode,
         installed.cache.files || {},
-        context
+        context,
+        installed.manifest as any
       );
       if (!exports) {
         throw new Error('Failed to load extension module');
@@ -602,10 +619,15 @@ class ExtensionManager {
     // Create a fully-populated ExtensionContext literal so TypeScript verifies
     // all required properties at compile time. Use strict stubs for tabs and
     // sidebar; commands uses commandRegistry and wraps handlers.
+    // Create SharedModules API instance for this extension
+    const sharedModulesAPI = createSharedModulesAPI(extensionId);
+
     const context: ExtensionContext = {
       extensionId,
       extensionPath: `/extensions/${extensionId.replace(/\./g, '/')}`,
       version: '1.0.0',
+      // Shared modules API (host-provided shared libraries)
+      sharedModules: sharedModulesAPI,
       logger: {
         info: (...args: unknown[]) => console.log(`[${extensionId}]`, ...args),
         warn: (...args: unknown[]) => console.warn(`[${extensionId}]`, ...args),
@@ -702,6 +724,8 @@ class ExtensionManager {
     // APIインスタンスを保存（dispose用）
     (context as any)._tabAPI = tabAPI;
     (context as any)._sidebarAPI = sidebarAPI;
+    // track shared modules API for cleanup when disabling extension
+    (context as any)._sharedModulesAPI = sharedModulesAPI;
 
     return context;
   }

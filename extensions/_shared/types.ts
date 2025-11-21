@@ -207,6 +207,13 @@ export interface ExtensionContext {
 
   /** Commands API */
   commands: ExtensionCommandsAPI;
+
+  /** Shared modules API provided by host for acquiring shared dependencies */
+  sharedModules?: {
+    require: <T = any>(name: string, versionRange?: string) => Promise<T>;
+    release: (name: string, versionRange?: string) => void;
+    getAvailable: () => Array<{ name: string; versions: string[] }>;
+  };
 }
 
 /**

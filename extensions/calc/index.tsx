@@ -54,6 +54,63 @@ function createCalcPanel(context: ExtensionContext) {
     const [showSymbols, setShowSymbols] = useState(false);
     const [showMdDebug, setShowMdDebug] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [markdownComponents, setMarkdownComponents] = useState<{
+      ReactMarkdown?: any;
+      remarkGfm?: any;
+      remarkMath?: any;
+      rehypeKatex?: any;
+    } | null>(null);
+    const [mdLoadError, setMdLoadError] = useState<string | null>(null);
+
+    // Try to load shared markdown/math libs via context.sharedModules if available.
+    useEffect(() => {
+      let mounted = true;
+
+      async function loadShared() {
+        try {
+          if (context && (context as any).sharedModules && (context as any).sharedModules.require) {
+            const sm = (context as any).sharedModules;
+            const [RM, gfm, math, rehype] = await Promise.all([
+              sm.require('react-markdown', '^9.0.0'),
+              sm.require('remark-gfm', '^4.0.0'),
+              sm.require('remark-math', '^6.0.0'),
+              sm.require('rehype-katex', '^7.0.0'),
+            ]);
+
+            if (!mounted) return;
+
+            setMarkdownComponents({
+              ReactMarkdown: (RM && (RM as any).default) || RM,
+              remarkGfm: (gfm && (gfm as any).default) || gfm,
+              remarkMath: (math && (math as any).default) || math,
+              rehypeKatex: (rehype && (rehype as any).default) || rehype,
+            });
+            return;
+          }
+
+          // Fallback: if host injected window.__PYXIS_MARKDOWN__, use it synchronously
+          if (typeof window !== 'undefined' && (window as any).__PYXIS_MARKDOWN__) {
+            const hostMd = (window as any).__PYXIS_MARKDOWN__;
+            if (mounted) {
+              setMarkdownComponents({
+                ReactMarkdown: hostMd.ReactMarkdown,
+                remarkGfm: hostMd.remarkGfm,
+                remarkMath: hostMd.remarkMath,
+                rehypeKatex: hostMd.rehypeKatex,
+              });
+            }
+          }
+        } catch (err: any) {
+          console.error('[CalcPanel] Failed to load shared markdown modules:', err);
+          if (mounted) setMdLoadError(err?.message || String(err));
+        }
+      }
+
+      loadShared();
+      return () => {
+        mounted = false;
+      };
+    }, []);
 
     // 履歴を読み込み
     useEffect(() => {
@@ -453,18 +510,12 @@ function createCalcPanel(context: ExtensionContext) {
                     }}
                   >
                     {(() => {
-                      // Prefer host-provided markdown/math libs (injected by ExtensionManager)
-                      const hostMd =
-                        typeof window !== 'undefined' && (window as any).__PYXIS_MARKDOWN__
-                          ? (window as any).__PYXIS_MARKDOWN__
-                          : null;
+                      // If loaded via context.sharedModules or host injection, use that
+                      const Comp = markdownComponents?.ReactMarkdown;
+                      const remarkPlugins = [markdownComponents?.remarkGfm, markdownComponents?.remarkMath].filter(Boolean);
+                      const rehypePlugins = [markdownComponents?.rehypeKatex].filter(Boolean);
 
-                      const ReactMarkdownComp = hostMd?.ReactMarkdown;
-                      const remarkPlugins = [hostMd?.remarkGfm, hostMd?.remarkMath].filter(Boolean);
-                      const rehypePlugins = [hostMd?.rehypeKatex].filter(Boolean);
-
-                      if (ReactMarkdownComp) {
-                        const Comp = ReactMarkdownComp;
+                      if (Comp) {
                         return (
                           <Comp
                             key={String(stepsMarkdown?.length ?? 0) + (showMdDebug ? '-dbg' : '')}
@@ -476,8 +527,12 @@ function createCalcPanel(context: ExtensionContext) {
                         );
                       }
 
-                      // Fallback: plain preformatted text when host libs are not available
-                      return <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{stepsMarkdown}</pre>;
+                      // If loading failed or components not yet available, show loading or fallback
+                      if (mdLoadError) {
+                        return <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{stepsMarkdown}</pre>;
+                      }
+
+                      return <div style={{ color: '#888' }}>Loading markdown renderer...</div>;
                     })()}
 
                     {showMdDebug && (

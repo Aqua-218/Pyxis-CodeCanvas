@@ -1,3 +1,5 @@
+import { loadExtensionWithSharedModules, ExtendedExtensionManifest } from './sharedModules';
+
 /**
  * Extension Loader
  * 拡張機能のコードをfetchしてロード・実行する
@@ -136,11 +138,22 @@ export async function fetchExtensionCode(manifest: ExtensionManifest): Promise<{
 export async function loadExtensionModule(
   entryCode: string,
   additionalFiles: Record<string, string | Blob>,
-  context: ExtensionContext
+  context: ExtensionContext,
+  manifest?: ExtendedExtensionManifest
 ): Promise<ExtensionExports | null> {
   try {
     extensionInfo('Loading extension module');
 
+    // If manifest declares sharedDependencies, delegate to shared-modules loader
+    try {
+      if (manifest && manifest.sharedDependencies && manifest.sharedDependencies.length > 0) {
+        extensionInfo('Using shared-modules loader for extension');
+        return await loadExtensionWithSharedModules(entryCode, manifest, context);
+      }
+    } catch (e) {
+      console.error('[ExtensionLoader] Shared modules loader failed:', e);
+      // fall through to normal loader as fallback
+    }
     // Reactが利用可能か確認
     if (typeof window !== 'undefined' && !(window as any).__PYXIS_REACT__) {
       extensionError(

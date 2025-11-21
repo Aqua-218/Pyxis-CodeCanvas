@@ -23,6 +23,7 @@ import type {
   ExtensionTabData,
 } from './system-api/TabAPI';
 import type { SystemModuleMap } from './systemModuleTypes';
+import type { SharedModulesAPI } from './sharedModules';
 
 /**
  * 拡張機能の種類
@@ -217,6 +218,9 @@ export interface ExtensionContext {
   commands: {
     registerCommand: (commandName: string, handler: CommandHandler) => () => void;
   };
+
+  /** Shared modules API provided by host (shared libraries) */
+  sharedModules?: SharedModulesAPI;
 }
 
 /**

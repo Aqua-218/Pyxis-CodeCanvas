@@ -166,6 +166,26 @@ async function bundleWithEsbuild(entryPoint, outfile, extDir) {
       }
     };
 
+    // Read package.json in the extension source dir to externalize its dependencies
+    let additionalExternals = [];
+    try {
+      const pkgPath = path.join(extDir, 'package.json');
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        additionalExternals = [
+          ...Object.keys(pkg.dependencies || {}),
+          ...Object.keys(pkg.peerDependencies || {}),
+        ];
+        // Deduplicate
+        additionalExternals = Array.from(new Set(additionalExternals));
+        if (additionalExternals.length > 0) {
+          console.log(`📦 Externalizing extension deps: ${additionalExternals.join(', ')}`);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to read package.json for externals:', e && e.message ? e.message : e);
+    }
+
     const result = await esbuild.build({
       entryPoints: [entryPoint],
       bundle: true,
@@ -198,6 +218,8 @@ async function bundleWithEsbuild(entryPoint, outfile, extDir) {
         'remark-math',
         'rehype-katex',
         'katex',
+        // Add extension-specific deps from package.json so they are not bundled
+        ...additionalExternals,
       ],
       loader: {
         '.ts': 'ts',

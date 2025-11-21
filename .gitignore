@@ -52,6 +52,7 @@ memo.md
 src/engine/initialFileContents.ts
 public/extensions/
 public/locales/
+public/shared-modules/
 
 tests/__artifacts__/*
 
